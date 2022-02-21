@@ -9,13 +9,13 @@ pygame.init()
 # const parameters for the program
 WIDTH, HEIGHT=800, 800
 WHITE=(255, 255, 255)
-FPS=60
+FPS=120
+SECONDS_IN_FRAME=24 * 3600
 
 # creating the display for the simulation
 WIN=pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Planet Simulation")
 FONT=pygame.font.SysFont('comicsans', 16)
-
 
 class Planet:
     """
@@ -24,7 +24,7 @@ class Planet:
     AU=149.6e6 * 1000  # the average distance of earth to the sun used in this simulation as a repentance distance
     G=6.67428e-11  # the constant parameter of gravity
     SCALE=(WIDTH / 4) / AU  # a measure designed to make the relationship accurately on screen
-    TIMESTEP=3600 * 24  # 1 day
+    TIMESTEP=SECONDS_IN_FRAME  # starting with 1 day per frame
 
     def __init__(self, name, x, y, radios, color, mass):
         self.x=x
@@ -45,6 +45,7 @@ class Planet:
         y=self.y * self.SCALE + HEIGHT / 2  # scaling the point into the screen
         if len(self.orbit) > 2:  # create a line that represents the jorbit of the planet
             update_points=[]
+
             for point in self.orbit:
                 x_p, y_p=point
                 x_p=x_p * self.SCALE + WIDTH / 2
@@ -84,9 +85,18 @@ class Planet:
         self.y_vel+=totals_fy / self.mass * self.TIMESTEP
         self.x+=self.x_vel * self.TIMESTEP
         self.y+=self.y_vel * self.TIMESTEP
-        self.orbit.append((self.x, self.y))
+        point=(self.x, self.y)
+
+        self.orbit.append(point)
+
         if len(self.orbit) > 800:
             self.orbit.remove(self.orbit[0])
+
+    def inside_screen(self):
+        x=self.x * self.SCALE + WIDTH / 2  # scaling the point into the screen
+        y=self.y * self.SCALE + HEIGHT / 2  # scaling the point into the screen
+        limits=100
+        return -limits < x < WIDTH + limits and -limits < y < HEIGHT + limits
 
 
 def get_planets_from_file():
@@ -95,7 +105,7 @@ def get_planets_from_file():
     :return: the planets from the file
     """
     planets=[]
-    if not os. path. isfile("plantes.csv"): # if there is not file
+    if not os.path.isfile("plantes.csv"):  # if there is not file
         return planets
     with open("plantes.csv", "r") as planetsFile:
         reader=csv.DictReader(planetsFile)
@@ -132,39 +142,77 @@ def create_new_planet(planet_size, planet_pos, mouse_pos, planet_color, planet_n
     return planet
 
 
-def main():
-    run=True
-    clock=pygame.time.Clock()
+def init_simulation():
     sun=Planet("sun", 0, 0, 30, (240, 240, 0), 1.99 * 10 ** 30)
     planets=[sun]
     planets.extend(get_planets_from_file())
+    return planets
+
+
+def render_screen(win):
+    win.fill((0, 0, 0))
+    render_time=round(Planet.TIMESTEP * FPS / SECONDS_IN_FRAME, 2)
+    above_text="Simulation Time : "
+    above_text_box=FONT.render(above_text, 1, WHITE)
+    win.blit(above_text_box, (20, 20))
+    below_text=str(render_time) + " days / second"
+    below_text_box=FONT.render(below_text, 1, WHITE)
+    win.blit(below_text_box, (20, 20 + above_text_box.get_height()))
+
+
+def main():
+    run=True
+    clock=pygame.time.Clock()
+    planets=init_simulation()
+    pause_simulation=False
     new_planet_mode=False
     new_planet_pos=(0, 0)
     new_planet_size=10
     new_planet_color=(0, 0, 0)
     while run:
         clock.tick(FPS)
-        WIN.fill((0, 0, 0))
+        render_screen(WIN)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run=False
+            if event.type == pygame.KEYDOWN:
+                key_down=event.unicode
+                if key_down == 'r':
+                    planets=init_simulation()
+                    continue
+                if key_down == 'd':
+                    Planet.TIMESTEP*=1.1
+                if key_down == 'a':
+                    Planet.TIMESTEP*=1 / 1.1
+                if key_down == 'w':
+                    Planet.TIMESTEP+=SECONDS_IN_FRAME/FPS
+                if key_down == 's':
+                    Planet.TIMESTEP-=SECONDS_IN_FRAME/FPS
+                if key_down == ' ':
+                    pause_simulation=not pause_simulation
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and not new_planet_mode:
                 new_planet_mode=True
                 new_planet_size=10
                 new_planet_pos=pygame.mouse.get_pos()
                 new_planet_color=(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
-                new_planet_mode=False
+
             if event.type == pygame.MOUSEBUTTONUP and event.button == 1 and new_planet_mode:
-                planets.append(create_new_planet(new_planet_size, new_planet_pos, pygame.mouse.get_pos(), new_planet_color,
-                                         len(planets)))
+                planets.append(
+                    create_new_planet(new_planet_size, new_planet_pos, pygame.mouse.get_pos(), new_planet_color,
+                                      len(planets)))
+                new_planet_mode=False
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
                 new_planet_mode=False
             if event.type == pygame.MOUSEWHEEL and new_planet_mode:
                 new_planet_size+=event.y
         if new_planet_mode:
             render_new_Planet(WIN, new_planet_size, new_planet_pos, pygame.mouse.get_pos(), new_planet_color)
         for planet in planets:
-            planet.update_positions(planets)
+            if not planet.inside_screen():
+                planets.remove(planet)
+                continue
+            if not pause_simulation:
+                planet.update_positions(planets)
             planet.render(WIN)
         pygame.display.update()
     pygame.quit()
